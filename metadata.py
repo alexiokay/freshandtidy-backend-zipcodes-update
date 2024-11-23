@@ -20,9 +20,12 @@ BAG_PARSE_REPO = "https://github.com/digitaldutch/BAG_parser.git"
 TEMP_DIR = "bag_temp"
 ZIP_FILE_NAME = "bag.zip"
 
+
+
 # Determine SQLite file location based on platform
 sqlite_file = "bag.sqlite" if not (platform.system() == "Linux" and "WSL2" in platform.uname().release) else "/mnt/c/bag.sqlite"
 csv_file = "bag.csv"
+#interpreter_name = platf TODO interpteren name on linux to python3 and windwos to python
 
 if not DATABASE_URL or not BAG_URL:
     raise Exception("DATABASE_URL or BAG_URL is missing in the .env file")
@@ -107,8 +110,15 @@ def update_config():
                 file.write("delete_no_longer_needed_bag_tables = True\n")
                 print("updated: delete_no_longer_needed_bag_tables")
             elif line.strip().startswith("file_db_sqlite"):
-                file.write(f'file_db_sqlite = "{sqlite_file}"\n')  # Use valid Python string syntax
+                file.write(f'file_db_sqlite = "output/{sqlite_file}"\n')  # Use valid Python string syntax
                 print("updated: file_db_sqlite")
+            elif line.strip().startswith("file_bag"):
+                file.write(f'file_bag = "bag.zip"\n') 
+                print("updated: file_bag")
+            elif line.strip().startswith("file_gemeenten"):
+                file.write(f'file_gemeenten = "bag_temp/input/gemeenten.csv"\n') 
+                print("updated: file_gemeenten")
+             
             else:
                 file.write(line)
 
@@ -118,13 +128,15 @@ def update_config():
 def convert_bag_to_csv(bag_file):
     try:
         print("Converting BAG file to SQLite and CSV...")
-        subprocess.run(["python3", os.path.join(TEMP_DIR, "import_bag.py"), bag_file, sqlite_file], check=True)
-        subprocess.run(["python3", os.path.join(TEMP_DIR, "export_to_csv.py"), "-a", sqlite_file, csv_file], check=True)
+        subprocess.run(["python", os.path.join(TEMP_DIR, "import_bag.py"), bag_file, sqlite_file], check=True)
+        subprocess.run(["python", os.path.join(TEMP_DIR, "export_to_csv.py"), "-a", sqlite_file, csv_file], check=True)
         print(f"Conversion complete. CSV saved as: {csv_file}")
         return csv_file
     except subprocess.CalledProcessError as e:
-        print(f"Error during BAG file conversion: {e.stderr.decode()}")
+        print(f"Error during BAG file conversion:\n{e.stderr}")
         raise
+  
+
 
 # Update the gov_data table with the CSV file
 def update_gov_data_table(csv_file):
@@ -198,8 +210,11 @@ def check_and_update_bag_data():
                 print("No update required. The BAG data is already up-to-date.")
                 return
 
-        print("New BAG data found or DEBUG mode enabled. Proceeding with download.")
-        download_file_with_progress(BAG_URL)
+        print("New BAG data found")
+        if zip_file_is_valid()==False:
+            download_file_with_progress(BAG_URL)
+            
+        print("bag.zip already exists and its valid, it won't be redownloaded")
         clone_bag_parse_repo()
         update_config()
         csv_file = convert_bag_to_csv(ZIP_FILE_NAME)
