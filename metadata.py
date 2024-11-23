@@ -126,19 +126,51 @@ def convert_bag_to_csv(bag_file):
 def update_gov_data_table(csv_file):
     conn = psycopg2.connect(DATABASE_URL)
     try:
+        # Load CSV file into a DataFrame
         df = pd.read_csv(csv_file)
+        csv_columns = set(df.columns)
+
+        # Fetch existing database columns
         cursor = conn.cursor()
+        cursor.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'gov_data'
+        """)
+        db_columns = {row[0] for row in cursor.fetchall()}
+
+        # Check for structural changes
+        # if csv_columns != db_columns:
+        #     subject = "Structural Change Detected in gov_data"
+        #     body = (
+        #         f"The structure of the 'gov_data' table has changed.\n\n"
+        #         f"Database columns: {sorted(db_columns)}\n"
+        #         f"CSV columns: {sorted(csv_columns)}\n\n"
+        #         "Please review the changes."
+        #     )
+        #     send_email(subject, body)
+        #     raise Exception("Structural changes detected. Email notification sent.")
+
+        # Clear existing data
+        cursor.execute("TRUNCATE TABLE gov_data")
+        print("Existing data in 'gov_data' table cleared.")
+
+        # Insert new data
         for _, row in df.iterrows():
-            cursor.execute(
-                """
-                INSERT INTO gov_data (column1, column2, ...) 
-                VALUES (%s, %s, ...)
-                ON CONFLICT (id) DO UPDATE SET column1 = EXCLUDED.column1, column2 = EXCLUDED.column2, ...;
-                """,
-                (row["column1"], row["column2"], ...)
-            )
+            values = tuple(row[col] for col in db_columns)  # Ensure order matches DB columns
+            placeholders = ", ".join(["%s"] * len(values))
+            query = f"""
+                INSERT INTO gov_data ({', '.join(db_columns)}) 
+                VALUES ({placeholders})
+            """
+            cursor.execute(query, values)
+
         conn.commit()
         print("gov_data table updated successfully.")
+    except Exception as e:
+        conn.rollback()
+        print(f"Error: {e}")
+        raise
     finally:
         conn.close()
 
