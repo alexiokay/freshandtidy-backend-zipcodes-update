@@ -13,9 +13,9 @@ import platform
 load_dotenv()
 
 # Fetch sensitive data from .env
-DATABASE_URL = os.getenv("ZIPCODES_DATABASE_URL")
-BAG_URL = os.getenv("BAG_URL")
-DEBUG = os.getenv("DEBUG", "False").lower() == "true"  # Enable debug if DEBUG=True in .env
+DATABASE_URL = os.environ.get("ZIPCODES_DATABASE_URL")
+BAG_URL = os.environ.get("BAG_URL")
+DEBUG = os.environ.get("DEBUG", "False").lower() == "true"  # Enable debug if DEBUG=True in .env
 BAG_PARSE_REPO = "https://github.com/digitaldutch/BAG_parser.git"
 TEMP_DIR = "bag_temp"
 ZIP_FILE_NAME = "bag.zip"
@@ -23,7 +23,7 @@ ZIP_FILE_NAME = "bag.zip"
 
 if platform.system() == "Linux" and "WSL2" in platform.uname().release:
     # Running on WSL2
-    sqlite_file = "/mnt/c/Users/alexispace/Desktop/bag.sqlite"
+    sqlite_file = "bag.sqlite"
 else:
     # Default path
     sqlite_file = "bag.sqlite"
