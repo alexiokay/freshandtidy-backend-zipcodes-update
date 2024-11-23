@@ -13,21 +13,15 @@ import platform
 load_dotenv()
 
 # Fetch sensitive data from .env
-DATABASE_URL = os.environ.get("ZIPCODES_DATABASE_URL")
-BAG_URL = os.environ.get("BAG_URL")
-DEBUG = os.environ.get("DEBUG", "False").lower() == "true"  # Enable debug if DEBUG=True in .env
+DATABASE_URL = os.getenv("ZIPCODES_DATABASE_URL")
+BAG_URL = os.getenv("BAG_URL")
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"  # Enable debug if DEBUG=True in .env
 BAG_PARSE_REPO = "https://github.com/digitaldutch/BAG_parser.git"
 TEMP_DIR = "bag_temp"
 ZIP_FILE_NAME = "bag.zip"
 
-
-if platform.system() == "Linux" and "WSL2" in platform.uname().release:
-    # Running on WSL2
-    sqlite_file = "bag.sqlite"
-else:
-    # Default path
-    sqlite_file = "bag.sqlite"
-    
+# Determine SQLite file location based on platform
+sqlite_file = "bag.sqlite" if not (platform.system() == "Linux" and "WSL2" in platform.uname().release) else "/mnt/c/bag.sqlite"
 csv_file = "bag.csv"
 
 if not DATABASE_URL or not BAG_URL:
@@ -36,11 +30,32 @@ if not DATABASE_URL or not BAG_URL:
 # Create TEMP_DIR if it doesn't exist
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# Ensure bag.zip exists in the script's directory
-def ensure_bag_zip():
-    if not os.path.exists(ZIP_FILE_NAME) or not zip_file_is_valid():
-        print(f"{ZIP_FILE_NAME} not found or is invalid. Downloading...")
-        download_file_with_progress(BAG_URL)
+# Database connection setup
+def get_db_connection():
+    return psycopg2.connect(DATABASE_URL)
+
+# Get the last modified timestamp from the metadata table
+def get_last_modified_from_db(conn):
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM metadata WHERE key = 'last_modified'")
+    result = cursor.fetchone()
+    cursor.close()
+    return result[0] if result else None
+
+# Update the last modified timestamp in the metadata table
+def update_last_modified_in_db(conn, last_modified):
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO metadata (key, value)
+        VALUES ('last_modified', %s)
+        ON CONFLICT (key)
+        DO UPDATE SET value = EXCLUDED.value;
+        """,
+        (last_modified,)
+    )
+    conn.commit()
+    cursor.close()
 
 # Check if the zip file exists, is not empty, and is a valid ZIP
 def zip_file_is_valid():
@@ -129,11 +144,33 @@ def update_gov_data_table(csv_file):
 
 # Main function to check and update BAG data
 def check_and_update_bag_data():
-    ensure_bag_zip()
-    clone_bag_parse_repo()
-    update_config()
-    csv_file = convert_bag_to_csv(ZIP_FILE_NAME)
-    update_gov_data_table(csv_file)
+    response = requests.head(BAG_URL)
+    if response.status_code != 200:
+        raise Exception(f"Failed to fetch metadata from {BAG_URL}. Status: {response.status_code}")
+
+    last_modified_header = response.headers.get("Last-Modified")
+    if not last_modified_header:
+        raise Exception("Last-Modified header not found in the response")
+
+    last_modified_online = datetime.strptime(last_modified_header, "%a, %d %b %Y %H:%M:%S GMT")
+    conn = get_db_connection()
+    try:
+        last_modified_db = get_last_modified_from_db(conn)
+        if last_modified_db:
+            last_modified_db = datetime.strptime(last_modified_db, "%a, %d %b %Y %H:%M:%S GMT")
+            if last_modified_online <= last_modified_db and zip_file_is_valid():
+                print("No update required. The BAG data is already up-to-date.")
+                return
+
+        print("New BAG data found or DEBUG mode enabled. Proceeding with download.")
+        download_file_with_progress(BAG_URL)
+        clone_bag_parse_repo()
+        update_config()
+        csv_file = convert_bag_to_csv(ZIP_FILE_NAME)
+        update_gov_data_table(csv_file)
+        update_last_modified_in_db(conn, last_modified_header)
+    finally:
+        conn.close()
 
 # Run the main function
 check_and_update_bag_data()
