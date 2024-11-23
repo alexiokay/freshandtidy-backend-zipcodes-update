@@ -116,11 +116,15 @@ def update_config():
 
 # Convert BAG file to SQLite and then CSV using BAG_parse
 def convert_bag_to_csv(bag_file):
-    print("Converting BAG file to SQLite and CSV...")
-    subprocess.run(["python3", os.path.join(TEMP_DIR, "import_bag.py"), bag_file, sqlite_file], check=True)
-    subprocess.run(["python3", os.path.join(TEMP_DIR, "export_to_csv.py"), "-a", sqlite_file, csv_file], check=True)
-    print(f"Conversion complete. CSV saved as: {csv_file}")
-    return csv_file
+    try:
+        print("Converting BAG file to SQLite and CSV...")
+        subprocess.run(["python3", os.path.join(TEMP_DIR, "import_bag.py"), bag_file, sqlite_file], check=True)
+        subprocess.run(["python3", os.path.join(TEMP_DIR, "export_to_csv.py"), "-a", sqlite_file, csv_file], check=True)
+        print(f"Conversion complete. CSV saved as: {csv_file}")
+        return csv_file
+    except subprocess.CalledProcessError as e:
+        print(f"Error during BAG file conversion: {e.stderr.decode()}")
+        raise
 
 # Update the gov_data table with the CSV file
 def update_gov_data_table(csv_file):
